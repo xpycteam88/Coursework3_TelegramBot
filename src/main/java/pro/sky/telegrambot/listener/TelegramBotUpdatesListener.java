@@ -15,6 +15,7 @@ import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -27,7 +28,7 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
     private static final String WELCOME_MESSAGE = "Привет!" +
             " Введи по порядку время и название задачи в формате: 01.01.2022 20:00 Сделать домашнюю работу";
     private static final Pattern PATTERN = Pattern.compile("([0-9\\.\\:\\s]{16})(\\s)([\\W+]+)");
-    private static final DateTimeFormatter DATE_TIME_FORMATTER= DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private final TelegramBot telegramBot;
     private final NotificationTasRepository notificationTasRepository;
 
@@ -77,29 +78,39 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
         var dateTime = matcher.group(1);
         var reminderText = matcher.group(3);
         LocalDateTime reminderClock;
+        LocalDateTime currentClock = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
         try {
             reminderClock = LocalDateTime.parse(dateTime, DATE_TIME_FORMATTER);
+
+            if (reminderClock.compareTo(currentClock) < 0) {
+                throw new IllegalStateException("Not a perfect Date");
+            }
         } catch (DateTimeParseException e) {
             logger.error("Could not parse MAT date {}, expected format [{}].", dateTime, DATE_TIME_FORMATTER);
             sendMessage(chat, "Неправильный формат даты");
             return;
+        } catch (IllegalStateException e) {
+            logger.error("Set date and time is less than the current date and time {}", currentClock);
+            sendMessage(chat, "Заданная дата и время меньше текущей: " + currentClock);
+            return;
         }
 
-        NotificationTask task = new NotificationTask();
-        task.setChatId(chat);
-        task.setTaskText(reminderText);
-        task.setTaskClock(reminderClock);
-        notificationTasRepository.save(task);
-        logger.info("Task has been saved {}", task);
-        sendMessage(chat, "Задача добавлена");
+            NotificationTask task = new NotificationTask();
+            task.setChatId(chat);
+            task.setTaskText(reminderText);
+            task.setTaskClock(reminderClock);
+            notificationTasRepository.save(task);
+            logger.info("Task has been saved {}", task);
+            sendMessage(chat, "Задача добавлена");
+
     }
 
-    private void sendMessage(Long chat, String text) {
-        SendMessage message = new SendMessage(chat, text);
+        private void sendMessage (Long chat, String text){
+            SendMessage message = new SendMessage(chat, text);
 
-        SendResponse response = telegramBot.execute(message);
-        logger.info("Response: {}", response.isOk());
-        logger.info("Error code: {}", response.errorCode());
+            SendResponse response = telegramBot.execute(message);
+            logger.info("Response: {}", response.isOk());
+            logger.info("Error code: {}", response.errorCode());
+        }
+
     }
-
-}
